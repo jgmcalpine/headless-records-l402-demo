@@ -1,0 +1,70 @@
+# Aperture config template for the regtest demo. init.sh renders this with
+# envsubst into volumes/aperture/aperture.yaml (gitignored) using values from
+# .env. Field names verified against aperture v0.5.0 sample-conf.yaml.
+#
+# REGTEST ONLY: `insecure: true` serves plain HTTP and the authenticator
+# points at the compose-internal seller lnd node. Do not reuse for mainnet.
+
+listenaddr: "0.0.0.0:8081"
+debuglevel: "debug"
+
+# Plain HTTP for the local demo — avoids self-signed TLS friction for curl
+# and lnget. A real deployment terminates TLS here (autocert) instead.
+insecure: true
+autocert: false
+servestatic: false
+
+dbbackend: "sqlite"
+sqlite:
+  dbfile: "/root/.aperture/aperture.db"
+
+# Invoice generation + L402 validation against the seller lnd node. The
+# macaroon dir must contain invoice.macaroon (lnd generates it on first run).
+authenticator:
+  network: "regtest"
+  disable: false
+  lndhost: "lnd-seller:10009"
+  tlspath: "/lnd/tls.cert"
+  macdir: "/lnd/data/chain/bitcoin/regtest"
+
+# Services are matched in order. Free routes are whitelisted; each paid route
+# is its own service so it can carry its own price (sats per request, set in
+# .env). Every proxied request to a paid service gets the shared-secret
+# header injected so the API can prove the request came through aperture.
+services:
+  - name: "headlessrecords-public"
+    hostregexp: "^.*$"
+    pathregexp: '^/(health|ready|openapi\.json|\.well-known/paid-api\.json|v1/ticker/[^/]+/preview)$'
+    address: "mock-upstream:3000"
+    protocol: http
+    price: 0
+    authwhitelistpaths:
+      - '^/health$'
+      - '^/ready$'
+      - '^/openapi\.json$'
+      - '^/\.well-known/paid-api\.json$'
+      - '^/v1/ticker/[^/]+/preview$'
+
+  # Paid: GET /v1/ticker/{ticker}/insider-selling-summary
+  - name: "headlessrecords-insider-selling-summary"
+    hostregexp: "^.*$"
+    pathregexp: '^/v1/ticker/[^/]+/insider-selling-summary$'
+    address: "mock-upstream:3000"
+    protocol: http
+    price: ${SUMMARY_PRICE_SATS}
+    timeout: 3600
+    capabilities: "insider-selling-summary"
+    headers:
+      X-L402-Proxy-Secret: "${L402_PROXY_SECRET}"
+
+  # Paid: GET /v1/ticker/{ticker}/insider-transactions
+  - name: "headlessrecords-insider-transactions"
+    hostregexp: "^.*$"
+    pathregexp: '^/v1/ticker/[^/]+/insider-transactions$'
+    address: "mock-upstream:3000"
+    protocol: http
+    price: ${TRANSACTIONS_PRICE_SATS}
+    timeout: 3600
+    capabilities: "insider-transactions"
+    headers:
+      X-L402-Proxy-Secret: "${L402_PROXY_SECRET}"

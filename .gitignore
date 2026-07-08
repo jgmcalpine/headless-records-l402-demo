@@ -1,0 +1,6 @@
+# Runtime state: chain data, lnd wallets/macaroons/TLS material, rendered
+# aperture config, lnget home. Never commit any of it.
+volumes/
+.env
+.lnget-home/
+transcript.txt

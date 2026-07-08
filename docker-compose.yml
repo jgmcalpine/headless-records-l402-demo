@@ -1,0 +1,120 @@
+# Self-contained L402 demo environment: bitcoind (regtest) + seller lnd +
+# buyer lnd + a bundled mock-upstream + aperture. REGTEST ONLY — no real
+# funds. Run ./init.sh once to render the aperture config, start everything,
+# fund the buyer, and open the buyer -> seller channel.
+#
+# aperture proxies paid requests to the bundled mock-upstream container
+# (canned JSON matching the real API's DTO shapes), so the full
+# 402 -> pay -> data loop works from `./init.sh` alone — no external API.
+# Prices per endpoint are set in .env (see .env.example).
+
+services:
+  bitcoind:
+    image: polarlightning/bitcoind:29.0
+    command:
+      - bitcoind
+      - -regtest=1
+      - -server=1
+      - -txindex=1
+      - -rpcbind=0.0.0.0
+      - -rpcallowip=0.0.0.0/0
+      - -rpcuser=${BITCOIND_RPC_USER:-demo}
+      - -rpcpassword=${BITCOIND_RPC_PASS:-demo}
+      - -zmqpubrawblock=tcp://0.0.0.0:28332
+      - -zmqpubrawtx=tcp://0.0.0.0:28333
+      - -fallbackfee=0.0002
+      - -debug=0
+    volumes:
+      - ./volumes/bitcoind:/home/bitcoin/.bitcoin
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "bitcoin-cli -regtest -rpcuser=${BITCOIND_RPC_USER:-demo} -rpcpassword=${BITCOIND_RPC_PASS:-demo} getblockchaininfo",
+        ]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+
+  # Seller node: aperture generates invoices against this node. Its data dir
+  # (TLS cert + regtest macaroons, including invoice.macaroon) is shared
+  # read-only with the aperture container.
+  lnd-seller:
+    image: lightninglabs/lnd:v0.21.1-beta
+    depends_on:
+      bitcoind:
+        condition: service_healthy
+    command:
+      - --alias=hr-seller
+      - --noseedbackup # regtest-only: auto-creates an unencrypted wallet
+      - --debuglevel=info
+      - --listen=0.0.0.0:9735
+      - --rpclisten=0.0.0.0:10009
+      - --restlisten=0.0.0.0:8080
+      - --tlsextradomain=lnd-seller
+      - --bitcoin.regtest
+      - --bitcoin.node=bitcoind
+      - --bitcoind.rpchost=bitcoind:18443
+      - --bitcoind.rpcuser=${BITCOIND_RPC_USER:-demo}
+      - --bitcoind.rpcpass=${BITCOIND_RPC_PASS:-demo}
+      - --bitcoind.zmqpubrawblock=tcp://bitcoind:28332
+      - --bitcoind.zmqpubrawtx=tcp://bitcoind:28333
+    volumes:
+      - ./volumes/lnd-seller:/root/.lnd
+
+  # Buyer node: lnget pays from this node. gRPC is mapped to the host so
+  # lnget (running on the host) can reach it at localhost:${BUYER_GRPC_PORT}.
+  lnd-buyer:
+    image: lightninglabs/lnd:v0.21.1-beta
+    depends_on:
+      bitcoind:
+        condition: service_healthy
+    command:
+      - --alias=hr-buyer
+      - --noseedbackup # regtest-only: auto-creates an unencrypted wallet
+      - --debuglevel=info
+      - --listen=0.0.0.0:9735
+      - --rpclisten=0.0.0.0:10009
+      - --restlisten=0.0.0.0:8080
+      - --tlsextradomain=lnd-buyer
+      - --bitcoin.regtest
+      - --bitcoin.node=bitcoind
+      - --bitcoind.rpchost=bitcoind:18443
+      - --bitcoind.rpcuser=${BITCOIND_RPC_USER:-demo}
+      - --bitcoind.rpcpass=${BITCOIND_RPC_PASS:-demo}
+      - --bitcoind.zmqpubrawblock=tcp://bitcoind:28332
+      - --bitcoind.zmqpubrawtx=tcp://bitcoind:28333
+    ports:
+      - "127.0.0.1:${BUYER_GRPC_PORT:-10010}:10009"
+    volumes:
+      - ./volumes/lnd-buyer:/root/.lnd
+
+  # Bundled stand-in for the private Headless Records core: canned JSON with
+  # the real DTO shapes. Not exposed on the host — only aperture reaches it.
+  mock-upstream:
+    image: python:3.12-alpine
+    command: ["python", "/app/server.py"]
+    volumes:
+      - ./mock-upstream/server.py:/app/server.py:ro
+    environment:
+      L402_PROXY_SECRET: ${L402_PROXY_SECRET:-}
+
+  # L402 reverse proxy. Reads the rendered config produced by init.sh from
+  # volumes/aperture/aperture.yaml (gitignored; template is committed as
+  # aperture.yaml.template). amd64-only image: runs under Rosetta on Apple
+  # Silicon. restart:on-failure covers the window before lnd-seller's wallet
+  # and macaroons exist.
+  aperture:
+    image: lightninglabs/aperture:v0.5.0
+    platform: linux/amd64
+    restart: on-failure
+    depends_on:
+      - lnd-seller
+      - mock-upstream
+    command:
+      - --configfile=/root/.aperture/aperture.yaml
+    ports:
+      - "127.0.0.1:${APERTURE_PORT:-8081}:8081"
+    volumes:
+      - ./volumes/aperture:/root/.aperture
+      - ./volumes/lnd-seller:/lnd:ro
