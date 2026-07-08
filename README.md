@@ -93,6 +93,7 @@ fully fresh chain).
 
 <details>
 <summary>Full output of one clean run (click to expand)</summary>
+
 ```
 ════ Buyer node status (regtest) ════
 
@@ -167,7 +168,9 @@ $ lnget http://localhost:8081/v1/ticker/ACME/insider-transactions
 (watch for what's missing: no 'paying...' line — the token from step 5 is reused)
 {"ticker":"ACME","request_id":"req_mock_0000000000008"}
 
-→ 2 products, per-endpoint pricing, 15 sats total, zero accounts, zero API keys.```
+→ 2 products, per-endpoint pricing, 15 sats total, zero accounts, zero API keys.
+```
+
 </details>
 
 ## The bundled mock upstream
