@@ -1,4 +1,4 @@
-**[▶ Full walkthrough (39s)](demo.mp4)**
+**[▶ Full walkthrough (39s)](https://github.com/user-attachments/assets/d8f2a79b-216d-4b40-aaa9-8c67138ec9a0)**
 
 # L402 Demo — Pay-per-request SEC data over Lightning (regtest)
 
