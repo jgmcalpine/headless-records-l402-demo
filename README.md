@@ -1,4 +1,4 @@
-![L402 agent payment demo](https://github.com/user-attachments/assets/76efac5a-2e2c-44a1-a2ce-47a02d0dff89)
+**[▶ Full walkthrough (39s)](demo.mp4)**
 
 # L402 Demo — Pay-per-request SEC data over Lightning (regtest)
 
